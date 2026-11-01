@@ -1,0 +1,551 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>LADDER — CP/M Classic</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body {
+    background: #02060210;
+    background: #020602;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    font-family: "Courier New", Courier, monospace;
+    padding: 12px;
+  }
+  .crt {
+    position: relative;
+    background: #031003;
+    border: 2px solid #1d4a1d;
+    border-radius: 8px;
+    box-shadow: 0 0 24px #0f40, 0 0 60px #0ff2, inset 0 0 40px #00ff0022;
+    padding: 14px 18px 12px;
+  }
+  .screen {
+    position: relative;
+    background: #041404;
+    border: 1px solid #145014;
+  }
+  .status {
+    color: #39ff5a;
+    text-shadow: 0 0 6px #39ff5a99;
+    font-size: 15px;
+    letter-spacing: 1px;
+    display: flex;
+    justify-content: space-between;
+    padding: 4px 6px 8px;
+    white-space: pre;
+  }
+  canvas { display: block; image-rendering: pixelated; }
+  .overlay {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    background: #041404e6;
+    color: #39ff5a;
+    text-shadow: 0 0 8px #39ff5aaa;
+    font-size: 16px;
+    letter-spacing: 2px;
+    text-align: center;
+    z-index: 3;
+  }
+  .overlay.hidden { display: none; }
+  .overlay .big { font-size: 34px; font-weight: bold; letter-spacing: 8px; }
+  .overlay .blink { animation: blink 1.1s steps(1) infinite; }
+  @keyframes blink { 50% { opacity: 0; } }
+  .scan {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    background: repeating-linear-gradient(0deg, #00000000 0 2px, #00000038 2px 4px);
+    z-index: 2;
+  }
+  .help {
+    color: #2fae44;
+    margin-top: 8px;
+    font-size: 13px;
+    letter-spacing: 1px;
+    text-align: center;
+    text-shadow: 0 0 5px #2fae4466;
+  }
+  kbd {
+    border: 1px solid #2fae44;
+    border-radius: 3px;
+    padding: 0 5px;
+    color: #39ff5a;
+  }
+</style>
+</head>
+<body>
+<div class="crt">
+  <div class="status">
+    <span id="statL">LEBEN: 3</span>
+    <span id="statC">LADDER</span>
+    <span id="statR">PUNKTE: 0&nbsp;&nbsp;LEVEL: 1</span>
+  </div>
+  <div class="screen">
+    <canvas id="game" width="640" height="352"></canvas>
+    <div class="scan"></div>
+    <div class="overlay" id="overlay">
+      <div class="big">LADDER</div>
+      <div>CP/M-CLASSIC &nbsp;&nbsp;1982</div>
+      <div class="blink" style="margin-top:14px">DRÜCKE ENTER</div>
+    </div>
+  </div>
+  <div class="help">
+    <kbd>←</kbd><kbd>↑</kbd><kbd>↓</kbd><kbd>→</kbd> bzw. <kbd>WASD</kbd> bewegen &nbsp;·&nbsp;
+    <kbd>X</kbd> = Boden aufgraben &nbsp;·&nbsp; <kbd>R</kbd> = Neustart
+  </div>
+</div>
+<script>
+"use strict";
+// ============================================================
+//  LADDER  —  Hommage an das klassische CP/M-Spiel (1982)
+//  Grüne Phosphor-Optik, Grube mit Ziegel-Etagen, Leitern,
+//  Schätze ($) einsammeln, rote Würfel-Gegner, die man mit
+//  gegrabenen Löchern fangen und begraben kann.
+// ============================================================
+const COLS = 40, ROWS = 22, CELL = 16;
+const FLOOR_ROWS = [4, 8, 12, 16, 20];      // Zeilen der Ziegel-Etagen
+const T = { EMPTY:0, SOLID:1, BRICK:2, LADDER:3, TREASURE:4 };
+const canvas = document.getElementById("game");
+const ctx = canvas.getContext("2d");
+const overlay = document.getElementById("overlay");
+const statL = document.getElementById("statL");
+const statR = document.getElementById("statR");
+const statC = document.getElementById("statC");
+
+// ---------- Hilfen ----------
+const rnd = (a,b) => a + Math.floor(Math.random()*(b-a+1));
+const inb = (c,r) => c>=0 && c<COLS && r>=0 && r<ROWS;
+
+// ---------- Sound (PC-summer-artige Beeps) ----------
+let AC = null;
+function beep(freq, dur, type="square", vol=0.05){
+  try {
+    if (!AC) AC = new (window.AudioContext||window.webkitAudioContext)();
+    const o = AC.createOscillator(), g = AC.createGain();
+    o.type = type; o.frequency.value = freq;
+    g.gain.setValueAtTime(vol, AC.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.0001, AC.currentTime+dur);
+    o.connect(g); g.connect(AC.destination);
+    o.start(); o.stop(AC.currentTime+dur);
+  } catch(e){}
+}
+
+// ---------- Level / Grid ----------
+let grid, holes, enemies, player, level, score, lives, state;
+let holeTime = 5000, trapTime = 2600, enemyInterval = 260, digCooldown = 0;
+const HOLE_MS = 6000;
+
+function cellAt(c,r){ return inb(c,r) ? grid[r][c] : T.SOLID; }
+function holeAt(c,r){ return holes.find(h => h.c===c && h.r===r && !h.filled); }
+
+function buildLevel(lv){
+  grid = [];
+  for (let r=0;r<ROWS;r++){
+    grid.push(new Array(COLS).fill(T.EMPTY));
+  }
+  // Seiten & Boden
+  for (let r=0;r<ROWS;r++){ grid[r][0]=T.SOLID; grid[r][COLS-1]=T.SOLID; }
+  for (let c=0;c<COLS;c++) grid[ROWS-1][c]=T.SOLID;
+  // Etagen
+  for (const fr of FLOOR_ROWS){
+    for (let c=1;c<COLS-1;c++) grid[fr][c] = T.BRICK;
+  }
+  // Leitern: von jeder Etage (außer der untersten) nach unten
+  for (let i=0;i<FLOOR_ROWS.length-1;i++){
+    const top = FLOOR_ROWS[i], bot = FLOOR_ROWS[i+1];
+    const n = 2 + (i % 2);                     // 2-3 Leitern pro Etage
+    const used = new Set();
+    for (let k=0;k<n;k++){
+      let c = rnd(3, COLS-4);
+      while (used.has(c)) c = rnd(3, COLS-4);
+      used.add(c);
+      for (let r=top; r<=bot-1; r++) grid[r][c] = T.LADDER;  // durch die obere Etage
+    }
+  }
+  // Schätze auf den unteren 4 Etagen
+  for (let i=1;i<FLOOR_ROWS.length;i++){
+    const fr = FLOOR_ROWS[i];
+    let placed = 0, tries = 0;
+    while (placed < 3 && tries++ < 60){
+      const c = rnd(2, COLS-3);
+      if (grid[fr-1][c] === T.EMPTY){ grid[fr-1][c] = T.TREASURE; placed++; }
+    }
+  }
+  holes = [];
+  // Spieler oben links
+  player = makeEnt(2, 3);
+  // Gegner oben rechts
+  enemies = [];
+  const n = Math.min(1 + (lv-1), 6);   // Level 1: EIN Monster, pro Level +1 (max. 6)
+  for (let k=0;k<n;k++) enemies.push(makeEnt(COLS-4-k*2, 3));
+  enemyInterval = Math.max(120, 280 - lv*22);
+  holeTime = Math.max(2600, HOLE_MS - lv*320);
+}
+
+function makeEnt(c,r){
+  return { c, r, x:c, y:r, dir:1, moveT:0, trapped:0, fallFrom:null, dead:0 };
+}
+
+// ---------- Physik ----------
+function support(c,r){
+  const below = cellAt(c, r+1);
+  return below===T.BRICK || below===T.SOLID || below===T.LADDER;
+}
+function canStand(e){ return support(e.c, e.r); }
+function passable(c,r){
+  const t = cellAt(c,r);
+  return t===T.EMPTY || t===T.TREASURE || t===T.LADDER;
+}
+function applyGravity(e){
+  let fell = 0;
+  while (!support(e.c, e.r) && cellAt(e.c, e.r+1) !== T.LADDER && passable(e.c, e.r+1)){
+    e.r++; fell++;
+  }
+  return fell;
+}
+
+// ---------- Eingabe ----------
+const keys = {};
+addEventListener("keydown", ev=>{
+  if (["ArrowLeft","ArrowRight","ArrowUp","ArrowDown"," "].includes(ev.key)) ev.preventDefault();
+  keys[ev.key.toLowerCase()] = true;
+  if (ev.key==="Enter" && (state==="ready"||state==="over"||state==="win")){
+    if (state==="ready" || state==="over"){ startGame(); }
+    else { nextLevel(); }
+  }
+  if (ev.key.toLowerCase()==="r" && state!=="ready"){ startGame(); }
+});
+addEventListener("keyup", ev=>{ keys[ev.key.toLowerCase()] = false; });
+
+// ---------- Spielzustand ----------
+function startGame(){
+  level = 1; score = 0; lives = 3;
+  buildLevel(level);
+  state = "play";
+  overlay.classList.add("hidden");
+  updStat();
+  beep(660, .1); beep(880, .12);
+}
+function nextLevel(){
+  level++;
+  buildLevel(level);
+  state = "play";
+  overlay.classList.add("hidden");
+  updStat();
+  beep(523,.09); beep(659,.09); beep(784,.14);
+}
+function loseLife(){
+  lives--;
+  updStat();
+  if (lives <= 0){
+    state = "over";
+    showOverlay("GAME OVER", "PUNKTE: "+score, "DRÜCKE ENTER");
+  } else {
+    // Respawn: Positionen zurücksetzen
+    player = makeEnt(2, 3);
+    enemies.forEach((e,i)=>{ Object.assign(e, makeEnt(COLS-4-(i%3)*2, 3)); });
+    state = "respawn";
+    setTimeout(()=>{ if(state==="respawn") state="play"; }, 900);
+  }
+  beep(180, .3, "sawtooth", .07);
+}
+function winLevel(){
+  state = "win";
+  showOverlay("GRUBE LEER!", "LEVEL "+level+" GESCHAFFT — PUNKTE: "+score, "ENTER = NÄCHSTE GRUBE");
+}
+function showOverlay(big, sub, hint){
+  overlay.innerHTML = '<div class="big">'+big+'</div><div>'+sub+'</div><div class="blink" style="margin-top:14px">'+hint+'</div>';
+  overlay.classList.remove("hidden");
+}
+function updStat(){
+  statL.textContent = "LEBEN: " + Math.max(0,lives);
+  statR.innerHTML = "PUNKTE: "+score+"&nbsp;&nbsp;LEVEL: "+level;
+  statC.textContent = "LADDER";
+}
+
+// ---------- Spieler ----------
+function updatePlayer(dt){
+  if (state !== "play") return;
+  player.moveT -= dt;
+  if (player.moveT > 0) return;
+  player.moveT = 95;
+  const c0 = player.c, r0 = player.r;
+  let moved = false;
+  const L = keys["arrowleft"]||keys["a"], R = keys["arrowright"]||keys["d"];
+  const U = keys["arrowup"]||keys["w"], D = keys["arrowdown"]||keys["s"];
+  const X = keys["x"];
+
+  if (U){
+    if (cellAt(c0, r0-1)===T.LADDER || (cellAt(c0,r0)===T.LADDER && passable(c0,r0-1))){
+      player.r--; moved = true;
+    }
+  } else if (D){
+    if (cellAt(c0, r0+1)===T.LADDER || (cellAt(c0,r0)===T.LADDER && passable(c0,r0+1))){
+      player.r++; moved = true;
+    }
+  }
+  if (!moved){
+    if (L && passable(c0-1,r0)){ player.c--; player.dir=-1; moved=true; }
+    else if (R && passable(c0+1,r0)){ player.c++; player.dir=1; moved=true; }
+  }
+  // Graben: Ziegel unter den Füßen entfernen -> man fällt selbst durch
+  digCooldown -= 95;
+  if (X && digCooldown <= 0 && cellAt(c0, r0+1)===T.BRICK && cellAt(c0, r0+2)!==T.SOLID){
+    holes.push({ c:c0, r:r0+1, born:performance.now(), filled:false });
+    grid[r0+1][c0] = T.EMPTY;
+    digCooldown = 350;
+    beep(200, .08, "square", .04);
+    player.r = r0;           // steht jetzt über dem Loch
+    applyGravity(player);     // und fällt durch
+  }
+  if (moved){
+    applyGravity(player);
+    // Schatz eingesammelt?
+    if (cellAt(player.c, player.r)===T.TREASURE){
+      grid[player.r][player.c] = T.EMPTY;
+      score += 50 * level;
+      beep(1046, .07); beep(1318, .09);
+      updStat();
+      if (!grid.flat().includes(T.TREASURE)) winLevel();
+    }
+  }
+  // Gegner-Berührung?
+  for (const e of enemies){
+    if (!e.trapped && !e.dead && e.c===player.c && e.r===player.r){ loseLife(); return; }
+  }
+}
+
+// ---------- Gegner ----------
+function floorOf(r){ return FLOOR_ROWS.includes(r+1) ? r+1 : null; }
+function enemyDirToward(targetR, e){
+  if (targetR > e.r) return 1;
+  if (targetR < e.r) return -1;
+  return 0;
+}
+function nearestLadderCol(e, wantDown){
+  // Leiter auf der eigenen Etage suchen, die in die gewünschte Richtung führt
+  const fr = floorOf(e.r);
+  if (!fr) return null;
+  let best = null, bd = 1e9;
+  for (let c=1;c<COLS-1;c++){
+    let ok;
+    if (wantDown) ok = cellAt(c, fr)===T.LADDER;   // Leiter führt durch diese Etage nach unten
+    else          ok = cellAt(c, fr-1)===T.LADDER; // oberste Leiterzelle einer Leiter von unten
+    if (!ok) continue;
+    const d = Math.abs(c - e.c);
+    if (d < bd){ bd = d; best = c; }
+  }
+  return best;
+}
+function updateEnemies(dt, now){
+  for (const e of enemies){
+    if (e.dead){ continue; }
+    // im Loch gefangen?
+    if (e.trapped){
+      if (now - e.trapped > trapTime){
+        e.trapped = 0;
+        e.r--;                     // aus dem Loch herausklettern
+        beep(300, .05, "square", .03);
+      }
+      continue;
+    }
+    e.moveT -= dt;
+    if (e.moveT > 0) continue;
+    e.moveT = enemyInterval;
+    const c0 = e.c, r0 = e.r;
+    // Gravitation: Loch unter den Füßen? -> reinfallen
+    const h = holeAt(c0, r0+1);
+    if (h && !support(c0,r0)){
+      e.r = r0+1;
+      e.trapped = now;
+      beep(140, .2, "square", .05);
+      continue;
+    }
+    if (!support(c0, r0) && cellAt(c0, r0+1)!==T.LADDER && passable(c0, r0+1)){
+      applyGravity(e);
+      continue;
+    }
+    // Ziel: Spielerzeile; einfache greedy-Jagd
+    const want = enemyDirToward(player.r, e);
+    // auf einer Leiter? -> direkt Richtung Spieler klettern
+    const onLadder = cellAt(c0, r0)===T.LADDER || cellAt(c0, r0+1)===T.LADDER || cellAt(c0, r0-1)===T.LADDER;
+    let moved = false;
+    if (want === 0){
+      // gleiche Reihe: direkt darauf zulaufen
+      if (player.c < c0 && passable(c0-1, r0)){ e.c--; moved=true; }
+      else if (player.c > c0 && passable(c0+1, r0)){ e.c++; moved=true; }
+      else if (passable(c0 + (Math.random()<.5?1:-1), r0)){ e.c += (Math.random()<.5?1:-1); moved=true; }
+    } else if (onLadder){
+      const nr = r0 + want;
+      if (cellAt(c0,nr)===T.LADDER || (cellAt(c0,r0)===T.LADDER && passable(c0,nr))){
+        e.r = nr; moved = true;
+      }
+    } else {
+      const wantDown = want > 0;
+      const lc = nearestLadderCol(e, wantDown);
+      if (lc !== null && lc === c0){
+        // Leiter benutzen
+        const nc = c0, nr = r0 + want;
+        if (cellAt(nc,nr)===T.LADDER || (cellAt(nc,r0)===T.LADDER && passable(nc,nr))){
+          e.r = nr; moved = true;
+        }
+      } else if (lc !== null){
+        const step = lc < c0 ? -1 : 1;
+        if (passable(c0+step, r0)){ e.c += step; moved=true; }
+      } else {
+        if (passable(c0 + (Math.random()<.5?1:-1), r0)){ e.c += (Math.random()<.5?1:-1); moved=true; }
+      }
+    }
+    if (moved) applyGravity(e);
+    else if (passable(c0 + (Math.random()<.5?1:-1), r0)) { e.c += (Math.random()<.5?1:-1); applyGravity(e); }
+    // Spieler gefangen?
+    if (!e.trapped && e.c===player.c && e.r===player.r){ loseLife(); return; }
+  }
+}
+
+// ---------- Löcher schließen ----------
+function updateHoles(now){
+  for (const h of holes){
+    if (h.filled) continue;
+    if (now - h.born > holeTime){
+      // Ziegel wächst zurück
+      for (const e of enemies){
+        if (e.trapped && e.c===h.c && e.r===h.r){
+          e.dead = 1; e.trapped = 0;
+          score += 100 * level;
+          updStat();
+          beep(784,.08); beep(988,.14);
+        }
+      }
+      grid[h.r][h.c] = T.BRICK;
+      h.filled = true;
+      beep(240, .06, "square", .04);
+    }
+  }
+  holes = holes.filter(h => !h.filled);
+}
+
+// ---------- Zeichnen (CP/M-Phosphor) ----------
+const GREEN = "#39ff5a", DIM = "#1d7a30", DARK = "#0e4d1c";
+function drawBrick(c,r){
+  ctx.fillStyle = DIM;
+  ctx.fillRect(c*CELL, r*CELL+CELL/2-3, CELL, 6);
+  ctx.fillStyle = DARK;
+  for (let i=0;i<CELL;i+=6){
+    ctx.fillRect(c*CELL+i, r*CELL+CELL/2-3, 1, 6);
+  }
+}
+function drawLadder(c,r){
+  const x = c*CELL, y = r*CELL;
+  ctx.fillStyle = GREEN;
+  ctx.fillRect(x+2, y, 3, CELL);
+  ctx.fillRect(x+CELL-5, y, 3, CELL);
+  ctx.fillStyle = DIM;
+  ctx.fillRect(x+2, y+3, CELL-4, 2);
+  ctx.fillRect(x+2, y+CELL-5, CELL-4, 2);
+}
+function drawTreasure(c,r){
+  ctx.fillStyle = GREEN;
+  ctx.shadowColor = GREEN; ctx.shadowBlur = 6;
+  ctx.font = "bold 14px 'Courier New', monospace";
+  ctx.textAlign = "center"; ctx.textBaseline = "middle";
+  ctx.fillText("$", c*CELL+CELL/2, r*CELL+CELL/2+1);
+  ctx.shadowBlur = 0;
+}
+function drawHole(c,r){
+  ctx.fillStyle = "#041404";
+  ctx.fillRect(c*CELL, r*CELL, CELL, CELL);
+  ctx.strokeStyle = DIM;
+  ctx.setLineDash([3,3]);
+  ctx.strokeRect(c*CELL+.5, r*CELL+.5, CELL-1, CELL-1);
+  ctx.setLineDash([]);
+}
+function drawSolid(c,r){
+  ctx.fillStyle = "#0a260e";
+  ctx.fillRect(c*CELL, r*CELL, CELL, CELL);
+  ctx.fillStyle = DARK;
+  for (let y=0;y<CELL;y+=8) for (let x=0;x<CELL;x+=8)
+    ctx.fillRect(c*CELL+x+((y/8)%2?4:0), r*CELL+y, 4, 4);
+}
+function drawPlayer(p){
+  const x = p.c*CELL, y = p.r*CELL;
+  ctx.fillStyle = GREEN;
+  ctx.shadowColor = GREEN; ctx.shadowBlur = 8;
+  // Kopf
+  ctx.fillRect(x+6, y+1, 4, 4);
+  // Körper
+  ctx.fillRect(x+6, y+5, 4, 5);
+  // Beine (leicht animiert)
+  const t = Math.floor(performance.now()/150)%2;
+  ctx.fillRect(x+(t?4:7), y+10, 3, 4);
+  ctx.fillRect(x+(t?9:6), y+10, 3, 4);
+  // Arme
+  ctx.fillRect(x+3, y+5, 3, 3);
+  ctx.fillRect(x+10, y+5, 3, 3);
+  ctx.shadowBlur = 0;
+}
+function drawEnemy(e, now){
+  if (e.dead) return;
+  const x = e.c*CELL, y = e.r*CELL;
+  // Roter Würfel mit Schachbrett-Muster
+  ctx.fillStyle = "#ff3b30";
+  ctx.shadowColor = "#ff3b30"; ctx.shadowBlur = 7;
+  ctx.fillRect(x+2, y+2, CELL-4, CELL-4);
+  ctx.fillStyle = "#7a0f08";
+  const t = Math.floor(now/120)%2;
+  for (let i=0;i<3;i++) for (let j=0;j<3;j++){
+    if ((i+j+t)%2===0) ctx.fillRect(x+3+i*4, y+3+j*4, 3, 3);
+  }
+  ctx.shadowBlur = 0;
+}
+function draw(now){
+  ctx.fillStyle = "#041404";
+  ctx.fillRect(0,0,canvas.width,canvas.height);
+  for (const h of holes) if(!h.filled) drawHole(h.c,h.r);
+  for (let r=0;r<ROWS;r++){
+    for (let c=0;c<COLS;c++){
+      const t = grid[r][c];
+      if (t===T.BRICK && !holeAt(c,r)) drawBrick(c,r);
+      else if (t===T.SOLID) drawSolid(c,r);
+      else if (t===T.LADDER) drawLadder(c,r);
+      else if (t===T.TREASURE) drawTreasure(c,r);
+    }
+  }
+  for (const e of enemies) drawEnemy(e, now);
+  drawPlayer(player);
+}
+
+// ---------- Hauptschleife ----------
+let last = performance.now();
+function loop(now){
+  const dt = Math.min(50, now - last); last = now;
+  if (state==="play"){
+    updatePlayer(dt);
+    updateEnemies(dt, now);
+    updateHoles(now);
+  } else if (state==="ready"||state==="over"||state==="win"){
+    // Standby-Flimmern
+  }
+  if (grid) draw(now);
+  requestAnimationFrame(loop);
+}
+level = 1; score = 0; lives = 3;
+buildLevel(level);
+state = "ready";
+updStat();
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>
