@@ -6,6 +6,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="viewport-fit" content="cover" />
 <meta name="apple-mobile-web-app-title" content="Ladder">
 <meta name="theme-color" content="#041404">
 <link rel="apple-touch-icon" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAALQAAAC0CAYAAAA9zQYyAAACiklEQVR42u3bsQmAMBCG0RQZwTY7pBU3cRSXvxQipA4E5HjFN4D/vTKWetSQslSMIKAloCWgJaAFtAS0BLQEtAS0gJaAloCWgJaAFtAS0BLQEtBSetBn3EtlO+j3XXH1XwQ00EADDTTQQAMNNNBAAw000EADDTTQQAMNNNBAAw000HtrT9cU0EADDTTQQAMNNNBAAw000EADDTTQQAMNNNBAAw000EADDTTQQAMNtMdJHicBDTTQQAMNNNBAAw000EADDTTQQAMNNNBAAw000EADDTTQQAMNNNBAA20HoIEG2iHtALRD2gFoh7QD0EDbwS9YegMaaKCBBhpooIEGGmgBDTTQQAMNNNBAAw000EADLaCBBhpooIEG2qMcOwDtkHYAGmigHdIOQDukHYB2SDsA7ZB2ABpooB3SDkA7pB2Adkg7AO2QdgAaaKAd0g5AO6QdgHZIOwDtkHYAGmig/YLlFyyggQYaaKCBBlpAAy2ggQYaaKCBBhpooIEW0EADDTTQQAMNNNBAe5RjB6CBBtoh7QC0Q9oBaIe0A9AOaQeggQbaIe0AtEPaAWiHtAPQDmkHoIEG2iHtALRD2gFoh7QD0A5pB6CBBtoh7QC0X7D8ggU00EADDTTQQAtooIEGGmiggQYaaKChBBpoAQ000EADDTTQQAPtcZLHSR4nOSTQQDukHYB2SDsA7ZB2ABpooB3SDkA7pB2Adkg7AO2QdgAaaKAd0g5AO6QdgHZIOwDtkHYAGmigHdIOQDukHYD2C5ZfsIAGGmigBTTQQAMNNNBAAw000EADDbSABhpooIEGGmgJaAloAS0BLQEtAS0BLaAloCWgJaAFtAS0BLQEtAS0gJaAloCWtjQAq7grIA1RinoAAAAASUVORK5CYII=">
@@ -26,6 +27,7 @@
     touch-action: manipulation;
     overflow: hidden;
     height: 100%;
+    padding-top: max(8px, env(safe-area-inset-top));
   }
   .crt {
     background: #031003;
@@ -88,7 +90,7 @@
   .overlay .big { font-size: 30px; font-weight: bold; letter-spacing: 8px; }
   .overlay .blink { animation: blink 1.1s steps(1) infinite; }
   @keyframes blink { 50% { opacity: 0; } }
-  /* ---- Touch-Steuerung ---- */
+  /* ---- Virtueller Joystick ---- */
   .controls {
     display: flex;
     align-items: center;
@@ -98,11 +100,38 @@
     user-select: none;
     flex: 0 0 auto;
   }
-  .dpad {
-    display: grid;
-    grid-template-columns: repeat(3, 56px);
-    grid-template-rows: repeat(3, 56px);
-    gap: 6px;
+  .joystick {
+    position: relative;
+    width: 130px;
+    height: 130px;
+    flex: 0 0 auto;
+    touch-action: none;
+  }
+  .jbase {
+    position: absolute;
+    inset: 0;
+    border-radius: 50%;
+    border: 2px solid #1d7a30;
+    background: radial-gradient(circle, #062006 0%, #041404 70%);
+    box-shadow: inset 0 0 18px #00ff0022;
+  }
+  .jknob {
+    position: absolute;
+    left: 50%; top: 50%;
+    width: 56px; height: 56px;
+    margin: -28px 0 0 -28px;
+    border-radius: 50%;
+    background: #0e4d1c;
+    border: 2px solid #39ff5a;
+    box-shadow: 0 0 12px #39ff5a66;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #39ff5a;
+    font-size: 20px;
+    text-shadow: 0 0 6px #39ff5a88;
+    pointer-events: none;
+    transition: transform .06s linear;
   }
   .btn {
     background: #041404;
@@ -110,29 +139,27 @@
     border-radius: 10px;
     color: #39ff5a;
     font-family: inherit;
-    font-size: 22px;
+    font-size: 16px;
     font-weight: bold;
     display: flex;
     align-items: center;
     justify-content: center;
     text-shadow: 0 0 6px #39ff5a88;
     touch-action: none;
+    -webkit-user-select: none;
+    user-select: none;
   }
   .btn:active, .btn.on { background: #0e4d1c; border-color: #39ff5a; }
-  .btn.u { grid-area: 1 / 2; }
-  .btn.l { grid-area: 2 / 1; }
-  .btn.r { grid-area: 2 / 3; }
-  .btn.d { grid-area: 3 / 2; }
-  .side { display: flex; flex-direction: column; gap: 12px; }
+  .side { display: flex; flex-direction: column; gap: 12px; flex: 0 0 auto; }
   .btn.dig {
-    width: 92px; height: 70px;
+    width: 104px; height: 84px;
     font-size: 18px;
     border-color: #ff3b30;
     color: #ff3b30;
     text-shadow: 0 0 6px #ff3b3088;
   }
   .btn.dig:active, .btn.dig.on { background: #3a0f08; border-color: #ff3b30; }
-  .btn.restart { width: 92px; height: 34px; font-size: 14px; }
+  .btn.restart { width: 104px; height: 34px; font-size: 13px; }
   .hint { color: #2fae44; font-size: 11px; letter-spacing: 1px; text-align: center; padding-top: 6px; }
 </style>
 </head>
@@ -153,18 +180,16 @@
     </div>
   </div>
   <div class="controls">
-    <div class="dpad">
-      <button class="btn u" data-k="arrowup">▲</button>
-      <button class="btn l" data-k="arrowleft">◀</button>
-      <button class="btn r" data-k="arrowright">▶</button>
-      <button class="btn d" data-k="arrowdown">▼</button>
+    <div class="joystick" id="joy">
+      <div class="jbase"></div>
+      <div class="jknob" id="knob">&#10010;</div>
     </div>
     <div class="side">
       <button class="btn dig" id="btnX">X<br>GRABEN</button>
       <button class="btn restart" id="btnR">R NEUSTART</button>
     </div>
   </div>
-  <div class="hint">Ziel: alle $ einsammeln · Gegner mit Löchern fangen · „Zum Home-Bildschirm" hinzufügen = Vollbild-App</div>
+  <div class="hint">Ziel: alle $ einsammeln · Joystick bewegen · X = Boden aufgraben · „Zum Home-Bildschirm" hinzufügen = Vollbild-App</div>
 </div>
 <script>
 "use strict";
@@ -275,14 +300,57 @@ function bindTouch(id, key){
   el.addEventListener("mouseup", up);
   el.addEventListener("mouseleave", up);
 }
-// D-Pad-IDs setzen, dann Touch-Handler binden:
-document.querySelector(".btn.u").id = "btnU";
-document.querySelector(".btn.l").id = "btnL";
-document.querySelector(".btn.r").id = "btnR2";
-document.querySelector(".btn.d").id = "btnD";
-bindTouch("btnU","arrowup"); bindTouch("btnD","arrowdown");
-bindTouch("btnL","arrowleft"); bindTouch("btnR2","arrowright");
-bindTouch("btnX","x");
+// ---------- Virtueller Joystick ----------
+const joy = document.getElementById("joy");
+const knob = document.getElementById("knob");
+const JOY_DEAD = 14;      // tote Zone in px
+const JOY_MAX = 46;      // Knopf-Radius in px
+let joyActive = false;
+
+function setJoyKeys(dx, dy){
+  keys["arrowleft"]  = dx < -JOY_DEAD;
+  keys["arrowright"] = dx >  JOY_DEAD;
+  keys["arrowup"]    = dy < -JOY_DEAD;
+  keys["arrowdown"]  = dy >  JOY_DEAD;
+}
+function joyUpdate(cx, cy){
+  const rect = joy.getBoundingClientRect();
+  const jx = rect.left + rect.width / 2;
+  const jy = rect.top + rect.height / 2;
+  let dx = cx - jx, dy = cy - jy;
+  const dist = Math.hypot(dx, dy);
+  if (dist > JOY_MAX){ dx = dx / dist * JOY_MAX; dy = dy / dist * JOY_MAX; }
+  knob.style.transform = "translate(" + dx + "px," + dy + "px)";
+  setJoyKeys(dx, dy);
+}
+function joyReset(){
+  joyActive = false;
+  knob.style.transform = "translate(0,0)";
+  setJoyKeys(0, 0);
+}
+joy.addEventListener("touchstart", ev=>{
+  ev.preventDefault();
+  const t = ev.changedTouches[0];
+  joyActive = t.identifier;
+  joyUpdate(t.clientX, t.clientY);
+}, {passive:false});
+joy.addEventListener("touchmove", ev=>{
+  ev.preventDefault();
+  for (const t of ev.changedTouches){
+    if (t.identifier === joyActive) joyUpdate(t.clientX, t.clientY);
+  }
+}, {passive:false});
+joy.addEventListener("touchend", ev=>{
+  for (const t of ev.changedTouches){
+    if (t.identifier === joyActive) joyReset();
+  }
+}, {passive:false});
+joy.addEventListener("touchcancel", joyReset, {passive:false});
+// Desktop-Test mit Maus
+joy.addEventListener("mousedown", ev=>{ joyActive = -1; joyUpdate(ev.clientX, ev.clientY); });
+addEventListener("mousemove", ev=>{ if (joyActive === -1) joyUpdate(ev.clientX, ev.clientY); });
+addEventListener("mouseup", ()=>{ if (joyActive === -1) joyReset(); });
+
 document.getElementById("btnR").addEventListener("click", ()=>{ if (state!=="ready") startGame(); });
 
 overlay.addEventListener("click", enterAction);
@@ -557,6 +625,5 @@ state = "ready";
 updStat();
 requestAnimationFrame(loop);
 </script>
-<script type="module" src="https://static.cloudflareinsights.com/beacon.min.js/vce701823e78c4301a35b7e07294d87301792088814092" integrity="sha512-UKNk8GbxkABxKcXYuLkO16EleLGUkcvJWtpSNmExE0Too3ZaFAxTscNWEc1OdAv5/BikHawapSCaiD2XCmp+Bw==" nonce="DubB9s9lbdL3lZqZK5syRg==" data-cf-beacon='{"version":"2024.11.0","token":"36b4216ae2dc4d5488c249161e71fe1e","spa":2}' crossorigin="anonymous"></script>
 </body>
 </html>
