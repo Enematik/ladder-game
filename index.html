@@ -160,6 +160,8 @@
   }
   .btn.dig:active, .btn.dig.on { background: #3a0f08; border-color: #ff3b30; }
   .btn.restart { width: 104px; height: 34px; font-size: 13px; }
+  .btn.tilt { width: 104px; height: 34px; font-size: 13px; }
+  .btn.tilt.on { background: #0e4d1c; border-color: #39ff5a; box-shadow: 0 0 10px #39ff5a55; }
   .hint { color: #2fae44; font-size: 11px; letter-spacing: 1px; text-align: center; padding-top: 6px; }
 </style>
 </head>
@@ -185,6 +187,7 @@
       <div class="jknob" id="knob">&#10010;</div>
     </div>
     <div class="side">
+      <button class="btn tilt" id="btnT">NEIGUNG: AUS</button>
       <button class="btn dig" id="btnX">X<br>GRABEN</button>
       <button class="btn restart" id="btnR">R NEUSTART</button>
     </div>
@@ -354,6 +357,63 @@ addEventListener("mouseup", ()=>{ if (joyActive === -1) joyReset(); });
 document.getElementById("btnR").addEventListener("click", ()=>{ if (state!=="ready") startGame(); });
 // Graben-Button (X) an Touch binden
 bindTouch("btnX","x");
+
+// ---------- Gyroskop-/Neigungssteuerung ----------
+const btnT = document.getElementById("btnT");
+let tiltOn = false;
+let tiltBase = 45;        // Kalibrierwert für beta (Haltung des Telefons)
+const TILT_DEAD = 15;     // tote Zone in Grad
+
+function tiltToKeys(ev){
+  if (!tiltOn) return;
+  const gamma = ev.gamma != null ? ev.gamma : 0;   // Neigung links/rechts
+  const beta  = ev.beta  != null ? ev.beta  : 0;    // Neigung vor/zurück
+  keys["arrowleft"]  = gamma < -TILT_DEAD;
+  keys["arrowright"] = gamma >  TILT_DEAD;
+  keys["arrowup"]    = beta  <  tiltBase - TILT_DEAD;
+  keys["arrowdown"] = beta  >  tiltBase + TILT_DEAD;
+}
+function tiltToggle(){
+  if (tiltOn){
+    tiltOn = false;
+    btnT.classList.remove("on");
+    btnT.textContent = "NEIGUNG: AUS";
+    setJoyKeys(0,0);
+    return;
+  }
+  const start = ()=>{
+    tiltOn = true;
+    // erste Messung = Neutralpunkt (Haltung beim Aktivieren)
+    const cal = e => { if (e.beta != null) tiltBase = e.beta; };
+    addEventListener("deviceorientation", cal, { once: true, capture: true });
+    addEventListener("deviceorientation", tiltToKeys, true);
+    btnT.classList.add("on");
+    btnT.textContent = "NEIGUNG: AN";
+    beep(880, .08);
+  };
+  // iOS 13+: Bewegungs-/Ausrichtungsdaten brauchen explizite Freigabe (Nutzergeste!)
+  if (typeof DeviceOrientationEvent !== "undefined" &&
+      typeof DeviceOrientationEvent.requestPermission === "function"){
+    DeviceOrientationEvent.requestPermission()
+      .then(res => { if (res === "granted") start(); else btnT.textContent = "NEIGUNG: VERWEIGERT"; })
+      .catch(()=>{ btnT.textContent = "NEIGUNG: FELHLER"; });
+  } else {
+    start();
+  }
+}
+btnT.addEventListener("click", tiltToggle);
+// Kalibrierung: aktuelle Haltung als Neutralpunkt, solange NEIGUNG noch aus ist
+btnT.addEventListener("touchstart", ev=>{
+  if (!tiltOn && typeof DeviceOrientationEvent !== "undefined" &&
+      typeof DeviceOrientationEvent.requestPermission !== "function"){
+    // einmalig zuhören, um die Haltung zu messen
+    const cal = e => { if (e.beta != null) tiltBase = e.beta; removeEventListener("deviceorientation", cal, true); };
+    addEventListener("deviceorientation", cal, true);
+  }
+}, {passive:true});
+// Joystick stilllegen, solange Neigungssteuerung aktiv ist
+const _joyUpdate = joyUpdate;
+joyUpdate = function(cx, cy){ if (!tiltOn) _joyUpdate(cx, cy); };
 
 overlay.addEventListener("click", enterAction);
 overlay.addEventListener("touchend", ev=>{ ev.preventDefault(); enterAction(); }, {passive:false});
