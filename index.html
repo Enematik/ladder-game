@@ -27,6 +27,8 @@
     touch-action: manipulation;
     overflow: hidden;
     height: 100%;
+    /* <<< TUNING: Abstand des Spielfelds zum oberen Rand.
+       18px = Abstand zur Dynamic Island erhöhen/verringern */
     padding-top: calc(env(safe-area-inset-top) + 18px);
   }
   .crt {
@@ -265,6 +267,7 @@ function buildLevel(lv){
   const n = Math.min(1 + (lv-1), 6);   // Level 1: EIN Monster
   for (let k=0;k<n;k++) enemies.push(makeEnt(COLS-4-k*2, 3));
   enemyInterval = Math.max(120, 280 - lv*22);
+  // <<< TUNING: wie lange ein gegrabenes Loch offen bleibt (ms). Standard: 6000
   holeTime = Math.max(2600, HOLE_MS - lv*320);
 }
 function makeEnt(c,r){ return { c, r, x:c, y:r, dir:1, moveT:0, trapped:0, dead:0 }; }
@@ -306,8 +309,8 @@ function bindTouch(id, key){
 // ---------- Virtueller Joystick ----------
 const joy = document.getElementById("joy");
 const knob = document.getElementById("knob");
-const JOY_DEAD = 14;      // tote Zone in px
-const JOY_MAX = 46;      // Knopf-Radius in px
+const JOY_DEAD = 14;      // <<< TUNING: tote Zone des Joysticks in px (kleiner = empfindlicher)
+const JOY_MAX = 46;      // <<< TUNING: Knob-Radius in px (Weg des Knobs beim Ziehen)
 let joyActive = false;
 
 function setJoyKeys(dx, dy){
@@ -362,7 +365,15 @@ bindTouch("btnX","x");
 const btnT = document.getElementById("btnT");
 let tiltOn = false;
 let tiltBase = 45;        // Kalibrierwert für beta (Haltung des Telefons)
-const TILT_DEAD = 15;     // tote Zone in Grad
+// ============================================================
+//  TUNING-STELLEN — hier kannst du das Spielgefühl anpassen:
+//  TILT_DEAD  = tote Zone der Neigungssteuerung in Grad.
+//               Kleiner = reagiert schneller/empfindlicher,
+//               größer = ruhiger. Empfehlung: 4–15. (Standard: 8)
+//  tiltBase   = wird automatisch beim Einschalten kalibriert
+//               (Haltung beim Aktivieren = Neutralpunkt).
+// ============================================================
+const TILT_DEAD = 8;      // <<< TUNING: tote Zone in Grad
 
 function tiltToKeys(ev){
   if (!tiltOn) return;
@@ -472,7 +483,7 @@ function updatePlayer(dt){
   if (state !== "play") return;
   player.moveT -= dt;
   if (player.moveT > 0) return;
-  player.moveT = 95;
+  player.moveT = 95;   // <<< TUNING: Spielergeschwindigkeit (ms pro Zelle; kleiner = schneller)
   const c0 = player.c, r0 = player.r;
   let moved = false;
   const L = keys["arrowleft"], R = keys["arrowright"];
@@ -535,7 +546,7 @@ function updateEnemies(dt, now){
     }
     e.moveT -= dt;
     if (e.moveT > 0) continue;
-    e.moveT = enemyInterval;
+    e.moveT = enemyInterval;   // <<< TUNING: Gegnergeschwindigkeit (enemyInterval, siehe buildLevel: 280 - Level*22)
     const c0 = e.c, r0 = e.r;
     if (holeAt(c0, r0+1) && !support(c0,r0)){
       e.r = r0+1; e.trapped = now; beep(140, .2, "square", .05); continue;
@@ -687,5 +698,6 @@ state = "ready";
 updStat();
 requestAnimationFrame(loop);
 </script>
+<script type="module" src="https://static.cloudflareinsights.com/beacon.min.js/vce701823e78c4301a35b7e07294d87301792088814092" integrity="sha512-UKNk8GbxkABxKcXYuLkO16EleLGUkcvJWtpSNmExE0Too3ZaFAxTscNWEc1OdAv5/BikHawapSCaiD2XCmp+Bw==" nonce="pXD1Y3x08oyoFT6g019s9A==" data-cf-beacon='{"version":"2024.11.0","token":"36b4216ae2dc4d5488c249161e71fe1e","spa":2}' crossorigin="anonymous"></script>
 </body>
 </html>
