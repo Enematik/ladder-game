@@ -27,7 +27,7 @@
     touch-action: manipulation;
     overflow: hidden;
     height: 100%;
-    padding-top: max(8px, env(safe-area-inset-top));
+    padding-top: calc(env(safe-area-inset-top) + 18px);
   }
   .crt {
     background: #031003;
@@ -352,6 +352,8 @@ addEventListener("mousemove", ev=>{ if (joyActive === -1) joyUpdate(ev.clientX, 
 addEventListener("mouseup", ()=>{ if (joyActive === -1) joyReset(); });
 
 document.getElementById("btnR").addEventListener("click", ()=>{ if (state!=="ready") startGame(); });
+// Graben-Button (X) an Touch binden
+bindTouch("btnX","x");
 
 overlay.addEventListener("click", enterAction);
 overlay.addEventListener("touchend", ev=>{ ev.preventDefault(); enterAction(); }, {passive:false});
